@@ -13,24 +13,14 @@ namespace Roco
     {
         public event PropertyChangedEventHandler PropertyChanged;
 
-        private void OnPropertyChanged(string propertyName, object before, object after)
+        protected void OnPropertyChanged(string propertyName, object before, object after)
         {
-
-            if (UpdateCache.TryGetValue(propertyName, out var args))
-            {
-                args.After = after;
-            }
-            else
-            {
-                args = new PropertyValueChangedEventArgs(propertyName, before, after);
-                UpdateCache.Add(args.PropertyName, args);
-            }
-
-            PropertyChanged?.Invoke(this, args);
+            PropertyChanged?.Invoke(this, new PropertyValueChangedEventArgs(propertyName, before, after));
         }
 
         public abstract string Id { get; }
 
-        internal readonly Dictionary<string, PropertyValueChangedEventArgs> UpdateCache = new Dictionary<string, PropertyValueChangedEventArgs>();
+        internal bool IsTracking;
+        internal readonly Dictionary<string, object> PropertyCache = new Dictionary<string, object>();
     }
 }

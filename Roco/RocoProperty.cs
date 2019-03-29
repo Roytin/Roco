@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using AspectCore.Extensions.Reflection;
 using Newtonsoft.Json;
@@ -9,65 +10,6 @@ using Roco.Attributes;
 
 namespace Roco
 {
-    enum RocoTypes
-    {
-        Empty,
-        Object,
-        Boolean,
-        Char,
-        SByte,
-        Byte,
-        Int16,
-        UInt16,
-        Int32,
-        UInt32,
-        Int64,
-        UInt64,
-        Single,
-        Double,
-        Decimal,
-        TimeSpan,
-        DateTime,
-        String
-    }
-
-    class RocoScheme
-    {
-        public Type Type { get; set; }
-        public Dictionary<string, RocoProperty> Properties { get; set; }
-
-        private readonly ConstructorReflector _constructorReflector;
-        public RocoScheme(Type type)
-        {
-            Type = type;
-            Properties = type
-                .GetProperties()
-                .Select(x=> new RocoProperty(x, this))
-                .ToDictionary(x=>x.Name, x=> x);
-
-            var constructorInfo = Type.GetTypeInfo().GetConstructor(new[] { typeof(string) });
-            _constructorReflector = constructorInfo.GetReflector();
-        }
-
-        public object CreateInstance(string entityId)
-        {
-            return _constructorReflector.Invoke(entityId);
-        }
-
-        public string GenerateKey(string entityId)
-        {
-            return $"{Type.Name}:{entityId}";
-        }
-
-        //public string GenerateKey<T>(T entity)
-        //    where T :RocoBase
-        //{
-        //    string id = Properties["Id"].GetValue(entity) as string;
-        //    return this.GenerateKey(id);
-        //}
-    }
-
-
     //interface IRocoProperty
     //{
     //    Type Type { get; }
@@ -83,6 +25,7 @@ namespace Roco
         public Type Type { get; private set; }
         public bool IsIndex { get; private set; }
         public bool IsUnique { get; private set; }
+        public bool IsSortable { get; }
         
         private PropertyReflector Property { get; set; }
 
@@ -99,6 +42,21 @@ namespace Roco
                 IsIndex = true;
                 if (indexAttribute.IsUnique)
                     IsUnique = true;
+            }
+
+            var sortAttribute = this.Property.GetCustomAttribute<SortableAttribute>();
+            if (sortAttribute != null)
+            {
+                if(!Type.IsValueType)
+                    throw new Exception("排序属性必须是值类型");
+                int size = Marshal.SizeOf(Type);
+                //检查属性类型是否可以排序
+                var maxSize = sizeof(double);
+                if (size > maxSize)
+                {
+                    throw new Exception("不能排序比double更大size的类型");
+                }
+                IsSortable = true;
             }
         }
 
@@ -123,7 +81,7 @@ namespace Roco
             { typeof(string), (p, instance, o) => p.SetValue(instance,   o) },
         };
         
-        public void SetValue(object instance, object value)
+        public void SetValue(RocoBase instance, object value)
         {
             if (ActionSetValueByType.TryGetValue(Type, out var action))
             {
@@ -136,7 +94,7 @@ namespace Roco
             }
         }
 
-        public object GetValue(object instance)
+        public object GetValue(RocoBase instance)
         {
             return Property.GetValue(instance);
         }
@@ -146,7 +104,12 @@ namespace Roco
         {
             if (!this.IsIndex)
                 throw new Exception("不可使用非索引特性属性来进行索引查询");
-            return $"{this.Scheme.Type.Name}:Index:{this.Name}:{indexValue}";
+            return $"{this.Scheme.Type.Name}:_X:{this.Name}:{indexValue}";
+        }
+
+        public string GenerateSortableKey()
+        {
+            return $"{this.Scheme.Type.Name}:_S:{this.Name}";
         }
     }
 }
